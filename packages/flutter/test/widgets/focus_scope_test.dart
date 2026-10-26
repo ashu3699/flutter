@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'dart:ui' show Tristate;
+import 'dart:ui' show SemanticsAction, Tristate;
 
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
@@ -2010,6 +2010,62 @@ void main() {
       final expectedSemantics = TestSemantics.root();
       expect(semantics, hasSemantics(expectedSemantics));
       semantics.dispose();
+    });
+
+    // Regression test for https://github.com/flutter/flutter/issues/195292
+    testWidgets("Descendants of ExcludeFocus aren't focusable in semantics.", (
+      WidgetTester tester,
+    ) async {
+      final SemanticsHandle handle = tester.ensureSemantics();
+
+      await tester.pumpWidget(
+        const Directionality(
+          textDirection: TextDirection.ltr,
+          child: ExcludeFocus(child: Focus(child: Text('Bold'))),
+        ),
+      );
+
+      final FocusNode focusNode = Focus.of(tester.element(find.text('Bold')));
+      expect(focusNode.canRequestFocus, isFalse);
+
+      final SemanticsData data = tester.getSemantics(find.text('Bold')).getSemanticsData();
+      expect(data.flagsCollection.isFocused, Tristate.none);
+      expect(data.hasAction(SemanticsAction.focus), isFalse);
+      handle.dispose();
+    });
+
+    // Regression test for https://github.com/flutter/flutter/issues/195292
+    testWidgets('Adding ExcludeFocus around a live subtree updates the subtree semantics.', (
+      WidgetTester tester,
+    ) async {
+      final SemanticsHandle handle = tester.ensureSemantics();
+
+      Widget buildSubtree({required bool exclude}) {
+        if (exclude) {
+          return const Directionality(
+            textDirection: TextDirection.ltr,
+            child: ExcludeFocus(child: Focus(child: Text('Bold'))),
+          );
+        }
+        return const Directionality(
+          textDirection: TextDirection.ltr,
+          child: Focus(child: Text('Bold')),
+        );
+      }
+
+      // Before excluding, the subtree is reported as focusable by semantics,
+      // which is what e.g. the web engine uses to give the element a tabindex,
+      // and what a screen reader uses to treat the node as focusable.
+      await tester.pumpWidget(buildSubtree(exclude: false));
+      final SemanticsData before = tester.getSemantics(find.text('Bold')).getSemanticsData();
+      expect(before.flagsCollection.isFocused, Tristate.isFalse);
+      expect(before.hasAction(SemanticsAction.focus), isTrue);
+
+      await tester.pumpWidget(buildSubtree(exclude: true));
+      final SemanticsData after = tester.getSemantics(find.text('Bold')).getSemanticsData();
+      expect(after.flagsCollection.isFocused, Tristate.none);
+      expect(after.hasAction(SemanticsAction.focus), isFalse);
+      handle.dispose();
     });
 
     // Regression test for https://github.com/flutter/flutter/issues/92693

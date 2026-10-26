@@ -615,6 +615,7 @@ class _FocusState extends State<Focus> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _focusAttachment?.reparent();
+    _syncFocusState();
     _handleAutofocus();
   }
 
@@ -678,11 +679,20 @@ class _FocusState extends State<Focus> {
   }
 
   void _handleFocusChanged() {
+    widget.onFocusChange?.call(focusNode.hasFocus);
+    _syncFocusState();
+  }
+
+  // Syncs the cached focus state with the node's current state, marking dirty
+  // anything that changed. Call this whenever the node may have changed state
+  // without a notification, such as when the node's ancestors change because
+  // of reparenting (e.g. the node moves into a subtree that has excluded
+  // focus), which doesn't send a notification by itself.
+  void _syncFocusState() {
     final bool hasPrimaryFocus = focusNode.hasPrimaryFocus;
     final bool canRequestFocus = focusNode.canRequestFocus;
     final bool descendantsAreFocusable = focusNode.descendantsAreFocusable;
     final bool descendantsAreTraversable = focusNode.descendantsAreTraversable;
-    widget.onFocusChange?.call(focusNode.hasFocus);
     // Check the cached states that matter here, and call setState if they have
     // changed.
     if (_hadPrimaryFocus != hasPrimaryFocus) {
@@ -710,6 +720,15 @@ class _FocusState extends State<Focus> {
   @override
   Widget build(BuildContext context) {
     _focusAttachment!.reparent(parent: widget.parentNode);
+    // Reparenting can change the node's effective focus state without sending
+    // a notification (e.g. the node moves into a subtree whose focus has been
+    // excluded), so refresh the cached state before the semantics are built
+    // from it. setState isn't called here since the state is being read from
+    // in the same build anyway.
+    _hadPrimaryFocus = focusNode.hasPrimaryFocus;
+    _couldRequestFocus = focusNode.canRequestFocus;
+    _descendantsWereFocusable = focusNode.descendantsAreFocusable;
+    _descendantsWereTraversable = focusNode.descendantsAreTraversable;
     Widget child = widget.child;
     if (widget.includeSemantics) {
       child = Semantics(
